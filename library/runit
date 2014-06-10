@@ -1,0 +1,119 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+# (c) 2014, Brian Akins <brian@akins.org>
+#
+# base on monit module by
+# (c) 2013, Darryl Stoflet <stoflet@gmail.com>
+#
+# This file is part of Ansible
+#
+# Ansible is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Ansible is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+DOCUMENTATION = '''
+---
+module: runit
+short_description: Manage the state of a program controled by monit
+description:
+     - Manage the state of a program controled by I(monit)
+options:
+  name:
+    description:
+      - The name of the I(runit) program/process to manage
+    required: true
+    default: null
+  state:
+    description:
+      - The state of service
+    required: true
+    default: null
+    choices: [ "started", "stopped", "restarted" ]
+requirements: [ ]
+version_added: 1.6
+author: Brian Akins
+'''
+
+EXAMPLES = '''
+# Manage the state of program "httpd" to be in "started" state.
+- runit: name=httpd state=started
+'''
+
+def main():
+    arg_spec = dict(
+        name=dict(required=True),
+        state=dict(required=True, choices=['started', 'restarted', 'stopped', ])
+    )
+
+    module = AnsibleModule(argument_spec=arg_spec, supports_check_mode=True)
+
+    name = module.params['name']
+    state = module.params['state']
+
+    SV = module.get_bin_path('sv', True)
+
+    def status():
+        """Return the status of the process in runit, or 'fail' if not present."""
+        rc, out, err = module.run_command('%s status %s' % (SV, name), check_rc=True)
+        for line in out.split('\n'):
+            # Sample output lines:
+            # run: name: (pid 12345) 100s; run: log: (pid 54321) 99s
+            parts = line.lower().split()
+            return parts[0][:-1]
+        else:
+            return ''
+
+    def run_command(command):
+        """Runs a runit command, and returns the new status."""
+        module.run_command('%s %s %s' % (SV, command, name), check_rc=True)
+        return status()
+
+    if status() == 'fail':
+        module.fail_json(msg='%s process not presently configured with runit' % name, name=name, state=state)
+
+    running = 'run' == status()
+
+    if running and state == 'started':
+        module.exit_json(changed=False, name=name, state=state)
+
+    if running and state == 'stopped':
+        if module.check_mode:
+            module.exit_json(changed=True)
+        status = run_command('stop')
+        if status == 'down':
+            module.exit_json(changed=True, name=name, state=state)
+        module.fail_json(msg='%s process not stopped' % name, status=status)
+
+    elif state == 'restarted':
+        if module.check_mode:
+            module.exit_json(changed=True)
+        status = run_command('restart')
+        if status == 'run':
+            module.exit_json(changed=True, name=name, state=state)
+        module.fail_json(msg='%s process not restarted' % name, status=status)
+
+    elif not running and state == 'started':
+        if module.check_mode:
+            module.exit_json(changed=True)
+        status = run_command('start')
+        if status == 'run':
+            module.exit_json(changed=True, name=name, state=state)
+        module.fail_json(msg='%s process not started' % name, status=status)
+
+    module.exit_json(changed=False, name=name, state=state)
+
+# import module snippets
+from ansible.module_utils.basic import *
+
+main()
