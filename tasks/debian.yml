@@ -1,0 +1,4 @@
+---
+- name: install runit
+  apt: name=runit state=present
+
