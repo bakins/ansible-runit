@@ -2,3 +2,5 @@
 - name: install runit
   apt: name=runit state=present
 
+- name: runsvdir service
+  service: name=runsvdir state=started
