@@ -40,6 +40,11 @@ options:
     required: true
     default: null
     choices: [ "started", "stopped", "restarted" ]
+  timeout:
+    description:
+      - The timeout to wait for the service to start or stop before considering an error
+    required: false
+    default: 7
 requirements: [ ]
 version_added: 1.6
 author: Brian Akins
@@ -53,13 +58,17 @@ EXAMPLES = '''
 def main():
     arg_spec = dict(
         name=dict(required=True),
-        state=dict(required=True, choices=['started', 'restarted', 'stopped', ])
+        state=dict(required=True, choices=['started', 'restarted', 'stopped', ]),
+        timeout=dict(required=False),
     )
 
     module = AnsibleModule(argument_spec=arg_spec, supports_check_mode=True)
 
     name = module.params['name']
     state = module.params['state']
+    timeout = module.params['timeout']
+    if not timeout:
+        timeout = "7"
 
     SV = module.get_bin_path('sv', True)
 
@@ -76,7 +85,7 @@ def main():
 
     def run_command(command):
         """Runs a runit command, and returns the new status."""
-        module.run_command('%s %s %s' % (SV, command, name), check_rc=True)
+        module.run_command('%s -w %s %s %s' % (SV, timeout, command, name), check_rc=True)
         return status()
 
     if status() == 'fail':
